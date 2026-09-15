@@ -16,10 +16,11 @@
   button.delete { background: #ff6b6b; padding: 2px 8px; font-size: 12px;}
   button.move { background: #a0b4ff; padding: 2px 8px; font-size: 12px; margin-left: 2px;}
   button.edit { background: #ffb46b; padding: 2px 8px; font-size: 12px; margin-left: 2px;}
+  button.photo { background: #33cc99; padding: 4px 10px; font-size: 12px; margin-top: 2px;}
   .item { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed #eee; }
   .item span { flex: 1; margin-left: 8px; font-size: 14px;}
   .item input[type="checkbox"] { width: 20px; height: 20px; }
-  .row { display: flex; gap: 10px; }
+  .row { display: flex; gap: 10px; align-items: center;}
   .row > * { flex: 1; }
   .summary-box { background: #f0f4ff; border-left: 4px solid var(--primary); padding: 10px; font-style: italic; font-size: 13px; color: #666; margin-top: 10px;}
   .insp-item { display: flex; align-items: flex-start; justify-content: space-between; padding: 10px 0; border-bottom: 1px dashed #eee; font-size: 14px;}
@@ -28,6 +29,8 @@
   .period-note { background: #fff0f5; border-left: 4px solid #ff6b9d; padding: 10px; font-size: 13px; color: #cc3366; margin-top: 10px; border-radius: 4px; line-height: 1.5;}
   .btn-start { background: #ff6b9d; }
   .btn-end { background: #a0b4ff; }
+  .photo-grid { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px;}
+  .photo-grid img { width: 60px; height: 60px; object-fit: cover; border-radius: 6px; border: 1px solid #eee; }
   .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 999; }
   .modal-box { background: white; padding: 20px; border-radius: 12px; width: 80%; max-width: 350px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
   .modal-box h3 { margin-top: 0; font-size: 16px; color: #333; text-align: center;}
@@ -111,7 +114,10 @@
 </div>
 
 <div class="card">
-  <h2>🍽️ 今日食物摄入（带标签）</h2>
+  <h2>🍽️ 今日食物摄入（拍照上传）</h2>
+  <div id="photo-grid" class="photo-grid"></div>
+  <input type="file" id="photo-input" accept="image/*" style="display: none;" onchange="uploadPhoto(event)">
+  <button onclick="document.getElementById('photo-input').click()" style="width: 100%; margin-bottom: 10px;">📷 拍照/上传图片</button>
   <div class="row"><input type="time" id="b-time"><input type="text" id="b-food" placeholder="早餐吃了啥"></div>
   <div class="row"><input type="time" id="l-time"><input type="text" id="l-food" placeholder="午餐吃了啥"></div>
   <div class="row"><input type="time" id="d-time"><input type="text" id="d-food" placeholder="晚餐吃了啥"></div>
@@ -167,7 +173,8 @@
     todo_list: [], today_plans: [], tomorrow_plans: [], inspiration_list: [], user_summary: '', ai_summary: '',
     expenses: [], incomes: [], balance: 0,
     breakfast: {time: '', food: ''}, lunch: {time: '', food: ''}, dinner: {time: '', food: ''},
-    snack: {time: '', food: ''}, late_night: {time: '', food: ''}
+    snack: {time: '', food: ''}, late_night: {time: '', food: ''},
+    photo_urls: []
   };
   
   let editingContext = null;
@@ -180,11 +187,9 @@
       let { data: latest } = await _supabase.from('daily_records').select('*').order('record_date', { ascending: false }).limit(1);
       if (latest && latest.length > 0) {
         const yest = latest[0];
-        // 昨天没完成的今日计划和明日计划，统统搬进今天
         const unfinishedToday = (yest.today_plans || []).filter(i => !i.done).map(i => ({...i, from: '昨日'}));
         const unfinishedTomorrow = (yest.tomorrow_plans || []).filter(i => !i.done).map(i => ({...i, from: '昨日'}));
         data.today_plans = [...unfinishedToday, ...unfinishedTomorrow];
-        
         data.todo_list = (yest.todo_list || []).filter(i => !i.done).map(i => ({...i, from: '昨日'}));
         data.balance = yest.balance || 0;
       }
@@ -195,13 +200,13 @@
     if (!data.inspiration_list) data.inspiration_list = [];
     if (!data.snack) data.snack = {time: '', food: ''};
     if (!data.late_night) data.late_night = {time: '', food: ''};
+    if (!data.photo_urls) data.photo_urls = [];
 
     let { data: profile } = await _supabase.from('user_profile').select('*').limit(1);
     if (profile && profile.length > 0) {
       document.getElementById('height').value = profile[0].height || '';
       document.getElementById('diet-pref').value = profile[0].diet_preferences || '';
       if (profile[0].current_weight) document.getElementById('weight').value = profile[0].current_weight;
-      
       if (profile[0].last_period_date) {
         document.getElementById('period-date').value = profile[0].last_period_date;
         updatePeriodNote(profile[0].last_period_date, profile[0].period_end_date);
@@ -209,6 +214,29 @@
     }
     render();
   };
+
+  // 拍照上传逻辑
+  async function uploadPhoto(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const fileName = `${Date.now()}_${file.name}`;
+    // 上传到之前建好的 food_photos 桶
+    const { data: uploadData, error } = await _supabase.storage.from('food_photos').upload(fileName, file);
+
+    if (error) {
+      alert('上传失败: ' + error.message);
+      return;
+    }
+
+    // 获取公开链接
+    const { data: urlData } = _supabase.storage.from('food_photos').getPublicUrl(fileName);
+    if (urlData) {
+      data.photo_urls.push(urlData.publicUrl);
+      await saveToDB();
+      alert('照片上传成功！');
+    }
+  }
 
   function updatePeriodNote(lastDate, endDate) {
     const noteBox = document.getElementById('period-note');
@@ -282,14 +310,14 @@
       lunch: data.lunch,
       dinner: data.dinner,
       snack: data.snack,
-      late_night: data.late_night
+      late_night: data.late_night,
+      photo_urls: data.photo_urls
     }, { onConflict: 'record_date' });
     if (error) console.error('保存失败:', error);
     render();
   }
 
   function render() {
-    // 渲染必做
     document.getElementById('todo-list').innerHTML = data.todo_list.map((item, idx) => `
       <div class="item">
         <input type="checkbox" ${item.done ? 'checked' : ''} onchange="toggleItem('todo_list', ${idx})">
@@ -303,7 +331,6 @@
       </div>
     `).join('');
 
-    // 渲染今日计划
     document.getElementById('plan-date').innerText = dateStr;
     document.getElementById('plan-list').innerHTML = data.today_plans.map((item, idx) => `
       <div class="item">
@@ -318,7 +345,6 @@
       </div>
     `).join('');
 
-    // 渲染明日计划
     document.getElementById('tomorrow-list').innerHTML = data.tomorrow_plans.map((item, idx) => `
       <div class="item">
         <input type="checkbox" ${item.done ? 'checked' : ''} onchange="toggleItem('tomorrow_plans', ${idx})">
@@ -352,6 +378,14 @@
     document.getElementById('user-summary').value = data.user_summary || '';
     document.getElementById('ai-summary-box').innerText = '小d的总结：' + (data.ai_summary || '暂无，明天小d帮你写。');
     document.getElementById('balance').value = data.balance || '';
+
+    // 照片墙渲染
+    document.getElementById('photo-grid').innerHTML = data.photo_urls.map((url, idx) => `
+      <div style="position:relative;">
+        <img src="${url}" alt="照片">
+        <button class="delete" style="position:absolute; top:-5px; right:-5px;" onclick="deletePhoto(${idx})">✕</button>
+      </div>
+    `).join('');
 
     document.getElementById('b-time').value = data.breakfast.time || '';
     document.getElementById('b-food').value = data.breakfast.food || '';
@@ -390,6 +424,12 @@
     if (reason === null) return;
     data[listName].splice(idx, 1);
     saveToDB();
+  }
+  function deletePhoto(idx) {
+    if (confirm('确定删除这张照片吗？（云端仍会保留）')) {
+      data.photo_urls.splice(idx, 1);
+      saveToDB();
+    }
   }
   function openEditModal(listName, idx) {
     editingContext = { type: 'item', listName, idx };
