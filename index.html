@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>祝锦宵的工作台</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root { --primary: #6c8cff; --bg: #f5f7fa; --card: #ffffff; --text: #333; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 15px; margin: 0; padding-bottom: 80px;}
+  h1 { font-size: 20px; text-align: center; color: var(--primary); }
+  .card { background: var(--card); border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+  .card h2 { font-size: 16px; margin-top: 0; border-bottom: 2px solid var(--primary); padding-bottom: 5px; display: inline-block; margin-bottom: 10px;}
+  input[type="text"], input[type="number"], input[type="time"], input[type="date"], textarea, select { width: 100%; padding: 8px; margin: 5px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+  button { background: var(--primary); color: white; border: none; padding: 8px 15px; border-radius: 6px; font-size: 14px; margin-top: 5px; cursor: pointer;}
+  button.delete { background: #ff6b6b; padding: 2px 8px; font-size: 12px;}
+  button.move { background: #a0b4ff; padding: 2px 8px; font-size: 12px; margin-left: 2px;}
+  button.edit { background: #ffb46b; padding: 2px 8px; font-size: 12px; margin-left: 2px;}
+  .item { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed #eee; }
+  .item span { flex: 1; margin-left: 8px; font-size: 14px;}
+  .item input[type="checkbox"] { width: 20px; height: 20px; }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+  .summary-box { background: #f0f4ff; border-left: 4px solid var(--primary); padding: 10px; font-style: italic; font-size: 13px; color: #666; margin-top: 10px;}
+  .insp-item { display: flex; align-items: flex-start; justify-content: space-between; padding: 10px 0; border-bottom: 1px dashed #eee; font-size: 14px;}
+  .insp-item span { flex: 1; margin-left: 8px; white-space: pre-wrap;}
+  .date-badge { font-size: 12px; color: #fff; background: #ff6b6b; padding: 1px 5px; border-radius: 4px; margin-left: 5px;}
+  .period-note { background: #fff0f5; border-left: 4px solid #ff6b9d; padding: 10px; font-size: 13px; color: #cc3366; margin-top: 10px; border-radius: 4px; line-height: 1.5;}
+  .btn-start { background: #ff6b9d; }
+  .btn-end { background: #a0b4ff; }
+  .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 999; }
+  .modal-box { background: white; padding: 20px; border-radius: 12px; width: 80%; max-width: 350px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+  .modal-box h3 { margin-top: 0; font-size: 16px; color: #333; text-align: center;}
+  .modal-box input { width: 100%; padding: 10px; margin: 15px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 14px; background: #f9f9f9;}
+  .modal-buttons { display: flex; gap: 10px; justify-content: space-between; }
+  .modal-buttons button { margin-top: 0; padding: 10px 20px; border-radius: 6px; border: none; font-size: 14px; flex: 1;}
+  .cancel-btn { background: #eee; color: #666; }
+  .confirm-btn { background: #6c8cff; color: white; }
+</style>
+</head>
+<body>
+
+<h1>祝锦宵的工作台</h1>
+
+<div class="card">
+  <h2>🌟 每日必做（自动延续）</h2>
+  <div id="todo-list"></div>
+  <div class="row">
+    <input type="text" id="new-todo" placeholder="添加必做事项...">
+    <button onclick="addItem('todo_list')" style="width: 60px;">添加</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>📋 今日计划 <span id="plan-date" style="font-size:12px;color:#888;"></span></h2>
+  <div id="plan-list"></div>
+  <div class="row">
+    <input type="text" id="new-plan" placeholder="添加今日计划...">
+    <button onclick="addItem('today_plans')" style="width: 60px;">添加</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>🌙 明日计划 <span style="font-size:12px;color:#888;">(明天自动顺延到今日)</span></h2>
+  <div id="tomorrow-list"></div>
+  <div class="row">
+    <input type="text" id="new-tomorrow" placeholder="提前规划明天...">
+    <button onclick="addItem('tomorrow_plans')" style="width: 60px;">添加</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>💡 今日灵感</h2>
+  <div id="inspiration-list"></div>
+  <div class="row" style="margin-top: 10px;">
+    <input type="text" id="new-insp" placeholder="记录灵感...">
+    <select id="insp-type" style="flex: 0.6; padding: 8px; border-radius: 6px; border: 1px solid #ddd;">
+      <option value="text">文字</option>
+      <option value="art">绘画</option>
+    </select>
+    <button onclick="addInspiration()" style="width: 60px;">添加</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>📝 总结今天做了什么</h2>
+  <textarea id="user-summary" rows="3" placeholder="你写了啥？（没写的话稍后小d帮你写）"></textarea>
+  <div class="summary-box" id="ai-summary-box">小d的总结：暂无，明天小d帮你写。</div>
+</div>
+
+<div class="card">
+  <h2>💰 今日账单</h2>
+  <div style="font-size: 14px; font-weight: bold;">支出</div>
+  <div id="expense-list"></div>
+  <div class="row">
+    <input type="text" id="expense-item" placeholder="支出内容">
+    <input type="text" id="expense-amount" placeholder="金额">
+    <button onclick="addBill('expense')" style="width: 60px;">记录</button>
+  </div>
+  <div style="font-size: 14px; font-weight: bold; margin-top: 15px;">收入</div>
+  <div id="income-list"></div>
+  <div class="row">
+    <input type="text" id="income-item" placeholder="收入内容">
+    <input type="text" id="income-amount" placeholder="金额">
+    <button onclick="addBill('income')" style="width: 60px;">记录</button>
+  </div>
+  <div class="row" style="margin-top: 15px;">
+    <div style="font-size: 14px; font-weight: bold; line-height: 35px;">当前余额：</div>
+    <input type="number" id="balance" placeholder="自动计算" style="flex: 2;">
+  </div>
+</div>
+
+<div class="card">
+  <h2>🍽️ 今日食物摄入（带标签）</h2>
+  <div class="row"><input type="time" id="b-time"><input type="text" id="b-food" placeholder="早餐吃了啥"></div>
+  <div class="row"><input type="time" id="l-time"><input type="text" id="l-food" placeholder="午餐吃了啥"></div>
+  <div class="row"><input type="time" id="d-time"><input type="text" id="d-food" placeholder="晚餐吃了啥"></div>
+  <div class="row"><input type="time" id="snack-time"><input type="text" id="snack-food" placeholder="零食吃了啥"></div>
+  <div class="row"><input type="time" id="late-time"><input type="text" id="late-food" placeholder="夜宵吃了啥"></div>
+</div>
+
+<div class="card">
+  <h2>⚖️ 身体数据与档案</h2>
+  <div class="row">
+    <input type="number" id="weight" placeholder="今日体重(kg)">
+    <button onclick="saveWeight()" style="width: 80px;">记录体重</button>
+  </div>
+  <div class="row" style="margin-top: 10px;">
+    <input type="number" id="height" placeholder="身高(cm)">
+    <input type="text" id="diet-pref" placeholder="饮食要求（少盐少油等）">
+    <button onclick="saveProfile()" style="width: 80px;">保存档案</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>🩸 生理期记录</h2>
+  <div class="row">
+    <input type="date" id="period-date">
+  </div>
+  <div class="row">
+    <button class="btn-start" onclick="savePeriodStart()" style="width: 100%;">记录这天来了</button>
+    <button class="btn-end" onclick="savePeriodEnd()" style="width: 100%;">记录这天结束了</button>
+  </div>
+  <div class="period-note" id="period-note">还没有记录过生理期哦。</div>
+</div>
+
+<div id="edit-modal" class="modal-overlay">
+  <div class="modal-box">
+    <h3>修改内容</h3>
+    <input type="text" id="edit-input">
+    <div class="modal-buttons">
+      <button class="cancel-btn" onclick="closeEditModal()">取消</button>
+      <button class="confirm-btn" onclick="saveEditModal()">确定</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const SUPABASE_URL = 'https://utngdsnnjmfdgtvapcai.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_RlK5Mx3FAQSlCnSIp33coQ_LnztcNiW';
+  const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  const today = new Date().toISOString().split('T')[0];
+  const dateStr = new Date().toLocaleDateString('zh-CN', {month: 'numeric', day: 'numeric'});
+
+  let data = {
+    todo_list: [], today_plans: [], tomorrow_plans: [], inspiration_list: [], user_summary: '', ai_summary: '',
+    expenses: [], incomes: [], balance: 0,
+    breakfast: {time: '', food: ''}, lunch: {time: '', food: ''}, dinner: {time: '', food: ''},
+    snack: {time: '', food: ''}, late_night: {time: '', food: ''}
+  };
+  
+  let editingContext = null;
+
+  window.onload = async () => {
+    document.getElementById('period-date').value = today;
+
+    let { data: records } = await _supabase.from('daily_records').select('*').eq('record_date', today);
+    if (!records || records.length === 0) {
+      let { data: latest } = await _supabase.from('daily_records').select('*').order('record_date', { ascending: false }).limit(1);
+      if (latest && latest.length > 0) {
+        const yest = latest[0];
+        // 昨天没完成的今日计划和明日计划，统统搬进今天
+        const unfinishedToday = (yest.today_plans || []).filter(i => !i.done).map(i => ({...i, from: '昨日'}));
+        const unfinishedTomorrow = (yest.tomorrow_plans || []).filter(i => !i.done).map(i => ({...i, from: '昨日'}));
+        data.today_plans = [...unfinishedToday, ...unfinishedTomorrow];
+        
+        data.todo_list = (yest.todo_list || []).filter(i => !i.done).map(i => ({...i, from: '昨日'}));
+        data.balance = yest.balance || 0;
+      }
+      await saveToDB();
+    } else {
+      Object.assign(data, records[0]);
+    }
+    if (!data.inspiration_list) data.inspiration_list = [];
+    if (!data.snack) data.snack = {time: '', food: ''};
+    if (!data.late_night) data.late_night = {time: '', food: ''};
+
+    let { data: profile } = await _supabase.from('user_profile').select('*').limit(1);
+    if (profile && profile.length > 0) {
+      document.getElementById('height').value = profile[0].height || '';
+      document.getElementById('diet-pref').value = profile[0].diet_preferences || '';
+      if (profile[0].current_weight) document.getElementById('weight').value = profile[0].current_weight;
+      
+      if (profile[0].last_period_date) {
+        document.getElementById('period-date').value = profile[0].last_period_date;
+        updatePeriodNote(profile[0].last_period_date, profile[0].period_end_date);
+      }
+    }
+    render();
+  };
+
+  function updatePeriodNote(lastDate, endDate) {
+    const noteBox = document.getElementById('period-note');
+    const start = new Date(lastDate);
+    const todayDate = new Date(today);
+    const diffDays = Math.floor((todayDate - start) / (1000 * 60 * 60 * 24)) + 1; 
+
+    if (!endDate) {
+      noteBox.innerText = `生理期第 ${diffDays} 天。注意保暖，多喝温水，避免生冷食物。如果感觉疲惫或腹痛，记得多休息。`;
+    } else {
+      const end = new Date(endDate);
+      const daysSinceEnd = Math.floor((todayDate - end) / (1000 * 60 * 60 * 24));
+      const daysUntilNext = 28 - diffDays; 
+
+      if (daysUntilNext <= 0) {
+        noteBox.innerText = `预测生理期将在近期到来（已超过28天周期）。近期随时准备好红糖水或暖宝宝，注意身体有没有腹痛前兆。`;
+      } else if (daysUntilNext <= 7) {
+        noteBox.innerText = `距离下一次生理期还有 ${daysUntilNext} 天。近期保持情绪稳定，适当补充富含铁和蛋白质的食物，避免剧烈运动。`;
+      } else {
+        noteBox.innerText = `生理期已结束 ${daysSinceEnd} 天。目前距离下一次生理期还有 ${daysUntilNext} 天。最近是安全期，好好养气血吧。`;
+      }
+    }
+  }
+
+  async function savePeriodStart() {
+    const selectedDate = document.getElementById('period-date').value;
+    if (!selectedDate) return alert('请先选择日期');
+    const { data: profile } = await _supabase.from('user_profile').select('id').limit(1);
+    if (profile && profile.length > 0) {
+      await _supabase.from('user_profile').update({ last_period_date: selectedDate, period_end_date: null }).eq('id', profile[0].id);
+    } else {
+      await _supabase.from('user_profile').insert({ last_period_date: selectedDate, period_end_date: null });
+    }
+    updatePeriodNote(selectedDate, null);
+    alert('已记录生理期开始！小d会帮你盯着日期的。');
+  }
+
+  async function savePeriodEnd() {
+    const selectedDate = document.getElementById('period-date').value;
+    if (!selectedDate) return alert('请先选择日期');
+    const { data: profile } = await _supabase.from('user_profile').select('*').limit(1);
+    if (profile && profile.length > 0) {
+      if (!profile[0].last_period_date) return alert('你还没有记录过生理期开始哦！');
+      await _supabase.from('user_profile').update({ period_end_date: selectedDate }).eq('id', profile[0].id);
+      updatePeriodNote(profile[0].last_period_date, selectedDate);
+    } else {
+      alert('请先记录生理期开始日期！');
+      return;
+    }
+    alert('已记录生理期结束，小d帮你记下了~');
+  }
+
+  async function saveToDB() {
+    let totalExpense = data.expenses.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
+    let totalIncome = data.incomes.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
+    if (!data.balance || isNaN(data.balance)) {
+      data.balance = (data.balance || 0) + totalIncome - totalExpense;
+    }
+    const { error } = await _supabase.from('daily_records').upsert({
+      record_date: today,
+      todo_list: data.todo_list,
+      today_plans: data.today_plans,
+      tomorrow_plans: data.tomorrow_plans,
+      inspiration_list: data.inspiration_list,
+      user_summary: data.user_summary,
+      ai_summary: data.ai_summary,
+      expenses: data.expenses,
+      incomes: data.incomes,
+      balance: data.balance,
+      breakfast: data.breakfast,
+      lunch: data.lunch,
+      dinner: data.dinner,
+      snack: data.snack,
+      late_night: data.late_night
+    }, { onConflict: 'record_date' });
+    if (error) console.error('保存失败:', error);
+    render();
+  }
+
+  function render() {
+    // 渲染必做
+    document.getElementById('todo-list').innerHTML = data.todo_list.map((item, idx) => `
+      <div class="item">
+        <input type="checkbox" ${item.done ? 'checked' : ''} onchange="toggleItem('todo_list', ${idx})">
+        <span style="${item.done ? 'text-decoration: line-through; color: #aaa;' : ''}">${item.text} ${item.from ? `<span class="date-badge">${item.from}</span>` : ''}</span>
+        <div>
+          <button class="edit" onclick="openEditModal('todo_list', ${idx})">✏️</button>
+          <button class="move" onclick="moveItem('todo_list', ${idx}, -1)">⬆️</button>
+          <button class="move" onclick="moveItem('todo_list', ${idx}, 1)">⬇️</button>
+          <button class="delete" onclick="deleteItem('todo_list', ${idx})">✕</button>
+        </div>
+      </div>
+    `).join('');
+
+    // 渲染今日计划
+    document.getElementById('plan-date').innerText = dateStr;
+    document.getElementById('plan-list').innerHTML = data.today_plans.map((item, idx) => `
+      <div class="item">
+        <input type="checkbox" ${item.done ? 'checked' : ''} onchange="toggleItem('today_plans', ${idx})">
+        <span style="${item.done ? 'text-decoration: line-through; color: #aaa;' : ''}">${item.text} ${item.from ? `<span class="date-badge">${item.from}</span>` : ''}</span>
+        <div>
+          <button class="edit" onclick="openEditModal('today_plans', ${idx})">✏️</button>
+          <button class="move" onclick="moveItem('today_plans', ${idx}, -1)">⬆️</button>
+          <button class="move" onclick="moveItem('today_plans', ${idx}, 1)">⬇️</button>
+          <button class="delete" onclick="deleteItem('today_plans', ${idx})">✕</button>
+        </div>
+      </div>
+    `).join('');
+
+    // 渲染明日计划
+    document.getElementById('tomorrow-list').innerHTML = data.tomorrow_plans.map((item, idx) => `
+      <div class="item">
+        <input type="checkbox" ${item.done ? 'checked' : ''} onchange="toggleItem('tomorrow_plans', ${idx})">
+        <span style="${item.done ? 'text-decoration: line-through; color: #aaa;' : ''}">${item.text}</span>
+        <div>
+          <button class="edit" onclick="openEditModal('tomorrow_plans', ${idx})">✏️</button>
+          <button class="move" onclick="moveItem('tomorrow_plans', ${idx}, -1)">⬆️</button>
+          <button class="move" onclick="moveItem('tomorrow_plans', ${idx}, 1)">⬇️</button>
+          <button class="delete" onclick="deleteItem('tomorrow_plans', ${idx})">✕</button>
+        </div>
+      </div>
+    `).join('');
+
+    document.getElementById('inspiration-list').innerHTML = data.inspiration_list.map((item, idx) => `
+      <div class="insp-item">
+        <span>【${item.type === 'text' ? '文字' : '绘画'}】${item.content}</span>
+        <div>
+          <button class="edit" onclick="openEditInspModal(${idx})">✏️</button>
+          <button class="delete" onclick="deleteInspiration(${idx})">✕</button>
+        </div>
+      </div>
+    `).join('');
+
+    document.getElementById('expense-list').innerHTML = data.expenses.map((item, idx) => `
+      <div class="item"><span>${item.text}</span><span>¥${item.amount}</span><button class="delete" onclick="deleteBill('expenses', ${idx})">✕</button></div>
+    `).join('');
+    document.getElementById('income-list').innerHTML = data.incomes.map((item, idx) => `
+      <div class="item"><span>${item.text}</span><span>¥${item.amount}</span><button class="delete" onclick="deleteBill('incomes', ${idx})">✕</button></div>
+    `).join('');
+
+    document.getElementById('user-summary').value = data.user_summary || '';
+    document.getElementById('ai-summary-box').innerText = '小d的总结：' + (data.ai_summary || '暂无，明天小d帮你写。');
+    document.getElementById('balance').value = data.balance || '';
+
+    document.getElementById('b-time').value = data.breakfast.time || '';
+    document.getElementById('b-food').value = data.breakfast.food || '';
+    document.getElementById('l-time').value = data.lunch.time || '';
+    document.getElementById('l-food').value = data.lunch.food || '';
+    document.getElementById('d-time').value = data.dinner.time || '';
+    document.getElementById('d-food').value = data.dinner.food || '';
+    document.getElementById('snack-time').value = data.snack.time || '';
+    document.getElementById('snack-food').value = data.snack.food || '';
+    document.getElementById('late-time').value = data.late_night.time || '';
+    document.getElementById('late-food').value = data.late_night.food || '';
+  }
+
+  function addItem(listName) {
+    let inputId = 'new-plan';
+    if (listName === 'todo_list') inputId = 'new-todo';
+    if (listName === 'tomorrow_plans') inputId = 'new-tomorrow';
+    const text = document.getElementById(inputId).value;
+    if (text) { data[listName].push({ text, done: false, from: '' }); document.getElementById(inputId).value = ''; saveToDB(); }
+  }
+  function toggleItem(listName, idx) {
+    data[listName][idx].done = !data[listName][idx].done;
+    if (data[listName][idx].done) data[listName][idx].from = '';
+    saveToDB();
+  }
+  function moveItem(listName, idx, direction) {
+    const newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= data[listName].length) return;
+    const temp = data[listName][idx];
+    data[listName][idx] = data[listName][newIdx];
+    data[listName][newIdx] = temp;
+    saveToDB();
+  }
+  function deleteItem(listName, idx) {
+    const reason = prompt('删除原因是什么？（如果不写就直接点确定）');
+    if (reason === null) return;
+    data[listName].splice(idx, 1);
+    saveToDB();
+  }
+  function openEditModal(listName, idx) {
+    editingContext = { type: 'item', listName, idx };
+    document.getElementById('edit-input').value = data[listName][idx].text;
+    document.getElementById('edit-modal').style.display = 'flex';
+  }
+  function openEditInspModal(idx) {
+    editingContext = { type: 'insp', idx };
+    document.getElementById('edit-input').value = data.inspiration_list[idx].content;
+    document.getElementById('edit-modal').style.display = 'flex';
+  }
+  function closeEditModal() {
+    document.getElementById('edit-modal').style.display = 'none';
+    editingContext = null;
+  }
+  function saveEditModal() {
+    const newText = document.getElementById('edit-input').value.trim();
+    if (newText !== '' && editingContext) {
+      if (editingContext.type === 'item') {
+        data[editingContext.listName][editingContext.idx].text = newText;
+      } else if (editingContext.type === 'insp') {
+        data.inspiration_list[editingContext.idx].content = newText;
+      }
+      saveToDB();
+    }
+    closeEditModal();
+  }
+  function addInspiration() {
+    const content = document.getElementById('new-insp').value;
+    const type = document.getElementById('insp-type').value;
+    if (content) { data.inspiration_list.push({ type, content, date: today }); document.getElementById('new-insp').value = ''; saveToDB(); }
+  }
+  function deleteInspiration(idx) {
+    if (confirm('确定删除这条灵感吗？')) { data.inspiration_list.splice(idx, 1); saveToDB(); }
+  }
+  function addBill(type) {
+    const item = document.getElementById(type + '-item').value;
+    const amount = parseFloat(document.getElementById(type + '-amount').value);
+    if (item && !isNaN(amount)) {
+      data[type].push({ text: item, amount: amount });
+      document.getElementById(type + '-item').value = '';
+      document.getElementById(type + '-amount').value = '';
+      data.balance = null;
+      saveToDB();
+    }
+  }
+  function deleteBill(type, idx) { data[type].splice(idx, 1); data.balance = null; saveToDB(); }
+
+  async function saveWeight() {
+    const w = parseFloat(document.getElementById('weight').value);
+    if (isNaN(w)) return alert('请输入正确的体重');
+    const { data: profile } = await _supabase.from('user_profile').select('id').limit(1);
+    if (profile && profile.length > 0) {
+      await _supabase.from('user_profile').update({ current_weight: w, last_weight_update: new Date().toISOString() }).eq('id', profile[0].id);
+    } else {
+      await _supabase.from('user_profile').insert({ current_weight: w, last_weight_update: new Date().toISOString() });
+    }
+    alert('体重记录成功！');
+  }
+
+  async function saveProfile() {
+    const h = parseFloat(document.getElementById('height').value);
+    const pref = document.getElementById('diet-pref').value;
+    const { data: profile } = await _supabase.from('user_profile').select('id').limit(1);
+    if (profile && profile.length > 0) {
+      await _supabase.from('user_profile').update({ height: h, diet_preferences: pref }).eq('id', profile[0].id);
+    } else {
+      await _supabase.from('user_profile').insert({ height: h, diet_preferences: pref });
+    }
+    alert('档案保存成功！');
+  }
+
+  ['b', 'l', 'd', 'snack', 'late'].forEach(meal => {
+    ['time', 'food'].forEach(field => {
+      document.getElementById(meal + '-' + field).addEventListener('blur', (e) => {
+        const key = meal === 'b' ? 'breakfast' : meal === 'l' ? 'lunch' : meal === 'd' ? 'dinner' : meal === 'snack' ? 'snack' : 'late_night';
+        data[key][field] = e.target.value;
+        saveToDB();
+      });
+    });
+  });
+
+</script>
+</body>
+</html>
